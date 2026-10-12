@@ -1,6 +1,7 @@
 # German Phrases
 
-A flashcard app for learning 3,000 German phrases (B1, B2, C1), with English and Chinese
+A flashcard app for learning 4,000 German phrases (B1: 1,000, B2: 1,500, C1: 1,500) and
+3,000 words (1,000 each in the collections *Wort-B1*, *Wort-B2*, *Wort-C1*), with English and Chinese
 translations and three example sentences each. It schedules reviews with spaced repetition
 (an SM-2 variant, like Anki). Pure Python standard library, so it runs on Windows, macOS and Linux.
 
@@ -112,6 +113,6 @@ the same `progress.json` format (export/import to move progress). See `mobile/RE
 | `progress.py` | saves and loads progress and settings |
 | `phrase_loader.py` | loads `data/phrases_*.csv` (B1/B2/C1 and imported collections) into `Phrase` objects |
 | `phrase_import.py` | imports phrase files as named collections; converters for file formats |
-| `tools/build_phrases.py` | rebuilds the phrase CSVs from `data/chunks/` |
+| `tools/build_phrases.py` | rebuilds the phrase CSVs from `data/chunks/` (`--kind words`: the word collections from `data/word_chunks/`); existing IDs are kept, new entries are appended up to `--target`/`--targets B2=1500,C1=1500` |
 | `tests/` | unit tests: `python -m unittest discover -s tests` |
 | `mobile/` | Android phone app (installable web app), see `mobile/README.md` |

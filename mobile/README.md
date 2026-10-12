@@ -52,7 +52,7 @@ at a time and move the file when you switch.
 | `index.html`, `styles.css` | the screens |
 | `app.js` | the five tabs, settings, speech, import/export (mirrors `trainer.py`) |
 | `logic.js` | scheduling, study queue, lists, calendar, answer checking (port of the Python modules) |
-| `phrases.json` | all 3,000 phrases, built from `data/phrases_*.csv` |
+| `phrases.json` | all phrases and words, built from `data/phrases_*.csv` |
 | `sw.js`, `manifest.webmanifest`, `icons/` | offline cache, install info, app icon |
 | `tools/build_data.py` | rebuilds `phrases.json` |
 | `tools/make_fixtures.py` | records the Python app's results for the parity test |

@@ -524,6 +524,12 @@ export function check(typed, expected) {
 
 export const LEVELS = ["B1", "B2", "C1"];
 export const LEVEL_CHOICES = [...LEVELS, "ALL"];
+
+// Built-in levels first, then the other collections (e.g. Wort-B1) in file order, then ALL.
+export function levelChoices(phrases) {
+  const others = [...new Set(phrases.map((p) => p.level))].filter((l) => !LEVELS.includes(l));
+  return [...LEVELS, ...others, "ALL"];
+}
 export const ALL_TOPICS = "All topics";
 export const DIRECTIONS = {
   de_to_en: "German → English / 中文",

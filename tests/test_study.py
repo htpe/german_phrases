@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -102,7 +103,9 @@ class StudySessionTest(unittest.TestCase):
 class RealDataTest(unittest.TestCase):
     def test_all_phrases_load(self):
         phrases = load_all()
-        self.assertEqual(len(phrases), 3000)
+        counts = Counter(p.level for p in phrases)
+        expected = {"B1": 1000, "B2": 1500, "C1": 1500, "Wort-B1": 1000, "Wort-B2": 1000, "Wort-C1": 1000}
+        self.assertEqual({level: counts[level] for level in expected}, expected)
         self.assertTrue(all(len(p.examples) == 3 for p in phrases))
 
 

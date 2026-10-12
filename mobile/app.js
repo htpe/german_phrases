@@ -491,7 +491,7 @@ class BrowseTab {
     this.index = 0;
     this.peek = false; // temporarily show translations while they are hidden
     this.card = new CardView($("browse-card"));
-    setOptions($("browse-level"), pairs(L.LEVEL_CHOICES), app.progress.settings.level);
+    setOptions($("browse-level"), pairs(app.levels), app.progress.settings.level);
     $("browse-level").onchange = () => this.onLevelChanged();
     $("browse-topic").onchange = () => this.refreshItems();
     $("browse-translate").onchange = () => this.show();
@@ -867,7 +867,7 @@ class ListsTab {
     this.shown = [];
     this.searchJob = null;
     setOptions($("lists-kind"), Object.entries(L.FILTERS), "learned");
-    setOptions($("lists-level"), pairs(L.LEVEL_CHOICES), "ALL");
+    setOptions($("lists-level"), pairs(app.levels), "ALL");
     setOptions($("lists-topic"), topicOptions("ALL"), L.ALL_TOPICS);
     setOptions($("lists-sort"), Object.entries(L.SORTS), "id");
     for (const id of ["lists-kind", "lists-topic", "lists-sort", "lists-limit", "lists-translation",
@@ -1180,7 +1180,7 @@ class ProgressTab {
 
 const settings = {
   setup() {
-    setOptions($("set-level"), pairs(L.LEVEL_CHOICES), "B1");
+    setOptions($("set-level"), pairs(app.levels), "B1");
     setOptions($("set-direction"), Object.entries(L.DIRECTIONS), "de_to_en");
     $("settings-open").onclick = () => this.open();
     $("set-level").onchange = () => {
@@ -1381,6 +1381,7 @@ async function main() {
     return;
   }
   app.byId = new Map(app.phrases.map((p) => [p.id, p]));
+  app.levels = L.levelChoices(app.phrases);
   settings.setup();
   app.tabs = { study: new StudyTab(), browse: new BrowseTab(), autoplay: new AutoPlayTab(),
     lists: new ListsTab(), progress: new ProgressTab() };
