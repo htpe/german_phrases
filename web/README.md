@@ -17,6 +17,28 @@ on every push to `main` that changes `web/`. Open it on any device. To install i
 After the first visit it works offline. A new version is picked up the next time the app is
 opened while online. Progress stays on each device; move it with Settings → Export / Import.
 
+### One-time setup on GitHub
+
+On <https://github.com/htpe/german_phrases>:
+
+1. **Turn on Actions** (needed because the repo is a fork): open the **Actions** tab. If it says
+   "Workflows aren't being run on this forked repository", click
+   **I understand my workflows, go ahead and enable them**.
+2. **Turn on Pages**: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. **Deploy**: **Actions** → **Deploy web to GitHub Pages** (left list) → **Run workflow** (branch
+   `main`) → **Run workflow**. After about a minute the run is green and shows the link.
+4. **Open** <https://htpe.github.io/german_phrases/> and install it as described above.
+5. **Move your progress** (optional): on the PC, export `progress.json` (Settings → Export) or take
+   `data/progress.json`, then on the phone choose Settings → Import.
+
+After that, every push that changes `web/` deploys by itself.
+
+If something goes wrong:
+
+- The run fails at *configure-pages*: step 2 isn't done yet. Do it, then run the workflow again.
+- The page shows 404: wait 1–2 minutes after the green run, then reload.
+- The phone shows an old version: close the app and open it again while online.
+
 ## Run locally
 
 ES modules and `fetch` don't work from `file://`, so serve the folder over http:
