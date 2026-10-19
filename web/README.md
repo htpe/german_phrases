@@ -5,7 +5,19 @@ sidebar at 900 px and wider, and at the bottom on narrow windows and phones. Sam
 (Study, Browse, Auto play, Lists, Progress, Settings), same spaced repetition and the same
 `progress.json` format as `trainer.py` (export/import in Settings).
 
-## Run
+## Online
+
+<https://tgoettingen.github.io/german_phrases/>, published by `.github/workflows/pages.yml`
+on every push to `main` that changes `web/`. Open it on any device. To install it as an app:
+
+- **Android**: Chrome → ⋮ → Add to Home screen → Install
+- **macOS**: Safari → File → Add to Dock
+- **iPhone/iPad**: Safari → Share → Add to Home Screen
+
+After the first visit it works offline. A new version is picked up the next time the app is
+opened while online. Progress stays on each device; move it with Settings → Export / Import.
+
+## Run locally
 
 ES modules and `fetch` don't work from `file://`, so serve the folder over http:
 
