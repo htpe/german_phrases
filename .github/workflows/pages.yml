@@ -1,4 +1,4 @@
-# Publishes the browser app in web/ to https://tgoettingen.github.io/german_phrases/
+# Publishes the browser app in web/ to https://htpe.github.io/german_phrases/
 # One-time setup: Settings → Pages → Build and deployment → Source: GitHub Actions.
 name: Deploy web to GitHub Pages
 

@@ -7,7 +7,7 @@ sidebar at 900 px and wider, and at the bottom on narrow windows and phones. Sam
 
 ## Online
 
-<https://tgoettingen.github.io/german_phrases/>, published by `.github/workflows/pages.yml`
+<https://htpe.github.io/german_phrases/>, published by `.github/workflows/pages.yml`
 on every push to `main` that changes `web/`. Open it on any device. To install it as an app:
 
 - **Android**: Chrome → ⋮ → Add to Home screen → Install
