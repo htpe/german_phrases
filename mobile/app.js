@@ -3,12 +3,13 @@
 import * as L from "./logic.js";
 
 const STORAGE_KEY = "german-phrases/progress";
-const VOICE_KEY = "german-phrases/voice";
+const VOICE_KEY = "german-phrases/voice"; // older versions kept voice and speed here
 const RATE_KEY = "german-phrases/rate";
 const VOICE_SAMPLE = "Guten Tag! So klingt diese Stimme.";
 const EXTRA_NEW = 10;
 const EXAMPLE_KEYS = ["d", "f", "g"]; // speak example 1-3
 const CHART_DAYS = 30;
+const TEXT_SIZES = [70, 200, 10]; // percent: smallest, largest, step (as trainer.py)
 const PAUSES = { recall: "Recall", answer: "Answer", example: "Example", next: "Next" };
 const DEFAULT_PAUSE = 1;
 const MAX_PAUSE = 10;
@@ -113,19 +114,40 @@ const fmtDayMon = (iso) => `${dd(iso)} ${mon(iso)}`;
 
 // ---------------------------------------------------------------- speech
 
+// Voice and speed are kept in the progress settings ("voice", "speech_rate"), as in trainer.py.
 class Speaker {
-  constructor() {
+  constructor(progress) {
+    this.progress = progress;
     this.synth = window.speechSynthesis || null;
     this.voices = [];
     this.allVoices = [];
-    this.voiceName = localStorage.getItem(VOICE_KEY) || "";
-    this.rate = Number(localStorage.getItem(RATE_KEY)) || 1; // 1 = normal speed
+    this.moveOldSettings();
     this.utterance = null; // keep a reference: Chrome drops events of collected utterances
     this.onVoices = () => {};
     if (this.synth) {
       this.loadVoices();
       this.synth.addEventListener?.("voiceschanged", () => this.loadVoices());
     }
+  }
+
+  moveOldSettings() {
+    const s = this.progress.settings;
+    const voice = localStorage.getItem(VOICE_KEY);
+    const rate = Number(localStorage.getItem(RATE_KEY));
+    if (voice === null && !rate) return;
+    if (voice !== null && !s.voice) s.voice = voice;
+    if (rate) s.speech_rate = rate;
+    localStorage.removeItem(VOICE_KEY);
+    localStorage.removeItem(RATE_KEY);
+    this.progress.save();
+  }
+
+  get voiceName() {
+    return this.progress.settings.voice || "";
+  }
+
+  get rate() { // 1 = normal speed
+    return Number(this.progress.settings.speech_rate) || 1;
   }
 
   get available() {
@@ -158,13 +180,13 @@ class Speaker {
   }
 
   setVoice(name) {
-    this.voiceName = name;
-    localStorage.setItem(VOICE_KEY, name);
+    this.progress.settings.voice = name;
+    this.progress.save();
   }
 
   setRate(rate) {
-    this.rate = Math.min(1.5, Math.max(0.5, Number(rate) || 1));
-    localStorage.setItem(RATE_KEY, String(this.rate));
+    this.progress.settings.speech_rate = Number(Math.min(1.5, Math.max(0.5, Number(rate) || 1)).toFixed(1));
+    this.progress.save();
   }
 
   // Resolves when the sentence has been spoken (or was interrupted). `lang`: "de", "en" or "zh".
@@ -1255,7 +1277,12 @@ const settings = {
     $("set-voice").onchange = () => app.speaker.setVoice($("set-voice").value);
     $("set-rate").oninput = () => this.showRate();
     $("set-rate").onchange = () => app.speaker.setRate($("set-rate").value);
-    $("set-voice-test").onclick = () => app.speaker.speak(VOICE_SAMPLE);
+    $("set-voice-test").onclick = () => {
+      if (app.tabs.autoplay.playing) app.tabs.autoplay.stop();
+      app.speaker.speak(VOICE_SAMPLE);
+    };
+    $("set-text-size").onchange = () => applyTextSize($("set-text-size").value);
+    $("set-text-reset").onclick = () => applyTextSize(100);
     app.speaker.onVoices = () => this.fillVoices();
     $("data-export").onclick = () => download(JSON.stringify(app.progress), "progress.json", "application/json");
     $("data-share").hidden = !navigator.canShare?.({ files: [new File(["{}"], "progress.json")] });
@@ -1279,6 +1306,7 @@ const settings = {
     $("set-mode").value = s.answer_mode;
     $("set-new").value = s.new_per_day;
     $("set-goal").value = s.daily_goal;
+    $("set-text-size").value = s.text_size;
     this.fillVoices();
     this.updateInfo();
   },
@@ -1333,15 +1361,16 @@ const settings = {
       return;
     }
     const learned = Object.values(data.cards).filter((c) => c.last_review).length;
-    if (!confirm(`Replace the progress on this phone with ${file.name}?\n\n`
-      + `${learned} phrases learned, ${data.log.length} ratings.`)) return;
-    app.progress.load(data);
+    if (!confirm(`Merge ${file.name} into the progress on this phone?\n\n`
+      + `${learned} phrases learned, ${data.log.length} ratings. For phrases studied in both, `
+      + "the more recent review is kept.")) return;
+    app.progress.merge(data);
     app.progress.save();
     app.tabs.study.startSession();
     app.tabs.autoplay.loadToday();
     app.tabs[app.current].onShow();
-    this.fill(); // show the imported settings
-    $("data-info").textContent += " Imported.";
+    this.fill();
+    $("data-info").textContent += " Merged.";
   },
 };
 
@@ -1419,7 +1448,28 @@ function loadProgress() {
   });
 }
 
+// Text size in percent of the normal size; the styles use rem, so everything scales.
+function applyTextSize(percent, save = true) {
+  const [low, high, step] = TEXT_SIZES;
+  const size = Math.min(high, Math.max(low, Math.round((Number(percent) || 100) / step) * step));
+  document.documentElement.style.fontSize = `${size}%`;
+  if ($("set-text-size")) $("set-text-size").value = size;
+  if (save && app.progress.settings.text_size !== size) {
+    app.progress.settings.text_size = size;
+    app.progress.save();
+    if (app.tabs[app.current]) app.tabs[app.current].onShow(); // redraw the chart
+  }
+}
+
 function onKey(e) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) { // Ctrl/Cmd + bigger, − smaller, 0 normal text
+    const step = { "+": 1, "=": 1, "-": -1 }[e.key];
+    if (step || e.key === "0") {
+      e.preventDefault(); // not the browser zoom
+      applyTextSize(step ? app.progress.settings.text_size + step * TEXT_SIZES[2] : 100);
+      return;
+    }
+  }
   if (e.target.closest("input, select, textarea") || document.querySelector("dialog[open]")) return;
   if (e.ctrlKey || e.metaKey) { // Ctrl+Z / Cmd+Z undoes the last rating
     if (e.key.toLowerCase() === "z") app.tabs.study.undo();
@@ -1434,7 +1484,8 @@ function onKey(e) {
 
 async function main() {
   app.progress = loadProgress();
-  app.speaker = new Speaker();
+  app.speaker = new Speaker(app.progress);
+  applyTextSize(app.progress.settings.text_size, false);
   try {
     const response = await fetch("phrases.json");
     app.phrases = (await response.json()).map(L.phraseFromRow);

@@ -3,12 +3,13 @@
 import * as L from "./logic.js";
 
 const STORAGE_KEY = "german-phrases/progress";
-const VOICE_KEY = "german-phrases/voice";
+const VOICE_KEY = "german-phrases/voice"; // older versions kept voice and speed here
 const RATE_KEY = "german-phrases/rate";
 const VOICE_SAMPLE = "Guten Tag! So klingt diese Stimme.";
 const EXTRA_NEW = 10;
 const EXAMPLE_KEYS = ["d", "f", "g"]; // speak example 1-3
 const CHART_DAYS = 30;
+const TEXT_SIZES = [70, 200, 10]; // percent: smallest, largest, step (as trainer.py)
 const PAUSES = { recall: "Recall", answer: "Answer", example: "Example", next: "Next" };
 const DEFAULT_PAUSE = 1;
 const MAX_PAUSE = 10;
@@ -53,6 +54,26 @@ function setOptions(select, entries, value) {
 const pairs = (values) => values.map((v) => [v, v]);
 const topicOptions = (level) => pairs([L.ALL_TOPICS, ...L.topicsFor(app.phrases, level)]);
 
+const checkedLangs = (prefix) => L.LANGS.filter((lang) => $(`${prefix}-${lang}`).checked);
+
+// The German / English / 中文 checkboxes `${prefix}-de` etc.: ticks `chosen`, then calls
+// onChange(langs) on every change. Unticking the last one is refused.
+function langCheckboxes(prefix, chosen, onChange) {
+  for (const lang of L.LANGS) {
+    const box = $(`${prefix}-${lang}`);
+    box.checked = chosen.includes(lang);
+    box.onchange = () => {
+      const langs = checkedLangs(prefix);
+      if (!langs.length) {
+        box.checked = true;
+        toast("At least one language is needed.");
+        return;
+      }
+      onChange(langs);
+    };
+  }
+}
+
 function readInt(input, fallback, low = 0) {
   const value = parseInt(input.value, 10);
   if (Number.isNaN(value)) {
@@ -93,12 +114,14 @@ const fmtDayMon = (iso) => `${dd(iso)} ${mon(iso)}`;
 
 // ---------------------------------------------------------------- speech
 
+// Voice and speed are kept in the progress settings ("voice", "speech_rate"), as in trainer.py.
 class Speaker {
-  constructor() {
+  constructor(progress) {
+    this.progress = progress;
     this.synth = window.speechSynthesis || null;
     this.voices = [];
-    this.voiceName = localStorage.getItem(VOICE_KEY) || "";
-    this.rate = Number(localStorage.getItem(RATE_KEY)) || 1; // 1 = normal speed
+    this.allVoices = [];
+    this.moveOldSettings();
     this.utterance = null; // keep a reference: Chrome drops events of collected utterances
     this.onVoices = () => {};
     if (this.synth) {
@@ -107,12 +130,34 @@ class Speaker {
     }
   }
 
+  moveOldSettings() {
+    const s = this.progress.settings;
+    const voice = localStorage.getItem(VOICE_KEY);
+    const rate = Number(localStorage.getItem(RATE_KEY));
+    if (voice === null && !rate) return;
+    if (voice !== null && !s.voice) s.voice = voice;
+    if (rate) s.speech_rate = rate;
+    localStorage.removeItem(VOICE_KEY);
+    localStorage.removeItem(RATE_KEY);
+    this.progress.save();
+  }
+
+  get voiceName() {
+    return this.progress.settings.voice || "";
+  }
+
+  get rate() { // 1 = normal speed
+    return Number(this.progress.settings.speech_rate) || 1;
+  }
+
   get available() {
     return Boolean(this.synth);
   }
 
   loadVoices() {
-    this.voices = this.synth.getVoices().filter((v) => v.lang.toLowerCase().replace("_", "-").startsWith("de"));
+    const langOf = (v) => v.lang.toLowerCase().slice(0, 2);
+    this.allVoices = this.synth.getVoices().filter((v) => L.LANGS.includes(langOf(v)));
+    this.voices = this.allVoices.filter((v) => langOf(v) === "de"); // the choice in the settings
     this.onVoices();
   }
 
@@ -121,24 +166,38 @@ class Speaker {
       || this.voices.find((v) => /^de[-_]DE/i.test(v.lang)) || this.voices[0] || null;
   }
 
+  // The chosen German voice, or the best voice for English or Chinese (null if none).
+  voiceFor(lang) {
+    if (lang === "de") return this.voice;
+    const own = this.allVoices.filter((v) => v.lang.toLowerCase().startsWith(lang));
+    const exact = new RegExp(`^${L.LANG_CODES[lang]}`.replace("-", "[-_]"), "i");
+    return own.find((v) => exact.test(v.lang)) || own[0] || null;
+  }
+
+  // German is tried even without a German voice; English and Chinese need a voice.
+  hasVoice(lang) {
+    return this.available && (lang === "de" || this.voiceFor(lang) !== null);
+  }
+
   setVoice(name) {
-    this.voiceName = name;
-    localStorage.setItem(VOICE_KEY, name);
+    this.progress.settings.voice = name;
+    this.progress.save();
   }
 
   setRate(rate) {
-    this.rate = Math.min(1.5, Math.max(0.5, Number(rate) || 1));
-    localStorage.setItem(RATE_KEY, String(this.rate));
+    this.progress.settings.speech_rate = Number(Math.min(1.5, Math.max(0.5, Number(rate) || 1)).toFixed(1));
+    this.progress.save();
   }
 
-  // Resolves when the sentence has been spoken (or was interrupted).
-  speak(text) {
-    if (!this.synth) return Promise.resolve();
+  // Resolves when the sentence has been spoken (or was interrupted). `lang`: "de", "en" or "zh".
+  speak(text, lang = "de") {
+    if (!this.hasVoice(lang)) return Promise.resolve();
     this.synth.cancel();
-    const u = new SpeechSynthesisUtterance(L.speakable(text));
-    u.lang = "de-DE";
+    const u = new SpeechSynthesisUtterance(lang === "de" ? L.speakable(text) : text);
+    u.lang = L.LANG_CODES[lang];
     u.rate = this.rate;
-    if (this.voice) u.voice = this.voice;
+    const voice = this.voiceFor(lang);
+    if (voice) u.voice = voice;
     this.utterance = u;
     return new Promise((resolve) => {
       u.onend = u.onerror = () => {
@@ -173,21 +232,20 @@ class CardView {
     this.root.replaceChildren(el("div", { class: "message", text }));
   }
 
+  // `langs` (front language first, then the answers) overrides the sides of `direction`.
   show(phrase, { direction = "de_to_en", showBack = true, showExamples = true, exampleEn = true,
-    info = "", banner = "" } = {}) {
+    info = "", banner = "", langs = null } = {}) {
     this.phrase = phrase;
-    const toGerman = direction !== "de_to_en";
-    const front = toGerman ? `${phrase.english}\n${phrase.chinese}` : phrase.german;
-    const back = toGerman ? phrase.german : phrase.english;
-    const chinese = toGerman ? "" : phrase.chinese;
+    const [fronts, answers] = langs ? [langs.slice(0, 1), langs.slice(1)] : L.cardSides(direction);
+    showBack &&= answers.length > 0;
+    const line = (cls, lang) => el("div", { class: cls, lang: L.LANG_CODES[lang],
+      text: L.phraseText(phrase, lang) });
     const parts = [el("div", { class: "info", text: info })];
     if (banner) parts.push(el("div", { class: "banner", text: banner }));
-    parts.push(el("div", { class: "front", lang: toGerman ? null : "de", text: front }));
+    parts.push(fronts.length === 1 ? line("front", fronts[0]) // two languages: one line each, like before
+      : el("div", { class: "front", text: fronts.map((lang) => L.phraseText(phrase, lang)).join("\n") }));
     if (showBack || showExamples) parts.push(el("hr"));
-    if (showBack) {
-      parts.push(el("div", { class: "back", lang: toGerman ? "de" : null, text: back }));
-      if (chinese) parts.push(el("div", { class: "chinese", lang: "zh", text: chinese }));
-    }
+    if (showBack) parts.push(...answers.map((lang) => line("back", lang)));
     this.items = [];
     if (showExamples) {
       const speech = app.speaker.available;
@@ -356,7 +414,7 @@ class StudyTab {
       if (this.suggested) this.rate(this.suggested);
       return;
     }
-    const expected = this.settings.direction === "en_to_de" ? phrase.german : phrase.english;
+    const expected = L.phraseText(phrase, L.cardSides(this.settings.direction)[1][0]);
     const [score, suggested] = L.check($("answer-input").value, expected);
     this.suggested = suggested;
     const verdict = { [L.GOOD]: "✓ Correct", [L.AGAIN]: "✗ Not quite" }[suggested] || "≈ Almost";
@@ -410,8 +468,9 @@ class StudyTab {
 
   speak() {
     const phrase = this.visiblePhrase();
-    // In English → German mode, speaking before the reveal would give the answer away.
-    if (phrase && (this.revealed || this.viewIndex !== null || this.settings.direction === "de_to_en")) {
+    // When German is the answer, speaking it before the reveal would give the answer away.
+    if (phrase && (this.revealed || this.viewIndex !== null
+      || L.cardSides(this.settings.direction)[0].includes("de"))) {
       app.speaker.speak(phrase.german);
     }
   }
@@ -450,7 +509,8 @@ class StudyTab {
       + `${left.review} review · Streak: ${streak} day${streak !== 1 ? "s" : ""}`;
     $("study-summary").replaceChildren(...[
       s.level, s.topic === "ALL" ? L.ALL_TOPICS : s.topic,
-      s.direction === "de_to_en" ? "DE → EN/中文" : "EN/中文 → DE",
+      L.cardSides(s.direction).map((side) => side.map((lang) => (lang === "zh" ? "中文" : lang.toUpperCase()))
+        .join("/")).join(" → "),
       s.answer_mode === "type" ? "Type" : "Reveal", `${s.new_per_day} new/day`, "⚙ Change",
     ].map((text) => el("span", { text })));
   }
@@ -534,7 +594,8 @@ class BrowseTab {
     }
     const phrase = this.items[this.index];
     const translations = $("browse-translate").checked || this.peek;
-    this.card.show(phrase, { showBack: translations, exampleEn: translations, info: info(phrase) });
+    this.card.show(phrase, { langs: L.LANGS, showBack: translations, exampleEn: translations,
+      info: info(phrase) });
     $("browse-position").textContent = `${this.index + 1} / ${this.items.length}`;
     $("browse-scale").value = this.index + 1;
     $("browse-star").textContent = app.progress.starred.has(phrase.id) ? "★" : "☆";
@@ -660,6 +721,9 @@ class AutoPlayTab {
     }));
     $("auto-loop").checked = Boolean(this.settings.autoplay_loop);
     $("auto-loop").onchange = () => this.saveSettings();
+    setOptions($("auto-content"), Object.entries(L.AUTOPLAY_CONTENT), L.cleanContent(this.settings.autoplay_content));
+    $("auto-content").onchange = () => this.onContentChanged();
+    langCheckboxes("auto-lang", L.cleanLangs(this.settings.autoplay_langs), () => this.onContentChanged());
     $("auto-play").onclick = () => this.toggle();
     $("auto-prev").onclick = () => this.jump(-1);
     $("auto-next").onclick = () => this.jump(1);
@@ -672,6 +736,19 @@ class AutoPlayTab {
 
   get settings() {
     return app.progress.settings;
+  }
+
+  content() {
+    return L.cleanContent($("auto-content").value);
+  }
+
+  langs() {
+    return L.cleanLangs(checkedLangs("auto-lang"));
+  }
+
+  onContentChanged() {
+    this.saveSettings();
+    if (!this.playing && this.items.length) this.showStill(); // while playing, the next phrase uses it
   }
 
   loadToday() {
@@ -695,7 +772,9 @@ class AutoPlayTab {
       this.card.message("No phrases to play.\nStudy some phrases first, or use “Auto play” in the Lists tab.");
       return;
     }
-    this.card.show(this.items[this.index], { info: info(this.items[this.index]) });
+    const phrase = this.items[this.index], langs = this.langs();
+    this.card.show(phrase, { langs, showExamples: this.content() !== "phrase", exampleEn: langs.includes("en"),
+      info: info(phrase) });
   }
 
   updateLabels(step) {
@@ -765,7 +844,7 @@ class AutoPlayTab {
 
   saveSettings() {
     const next = { autoplay_pauses: Object.fromEntries(Object.keys(PAUSES).map((k) => [k, this.pause(k)])),
-      autoplay_loop: $("auto-loop").checked };
+      autoplay_loop: $("auto-loop").checked, autoplay_content: this.content(), autoplay_langs: this.langs() };
     if (Object.entries(next).some(([k, v]) => JSON.stringify(this.settings[k]) !== JSON.stringify(v))) {
       Object.assign(this.settings, next);
       app.progress.save();
@@ -787,46 +866,36 @@ class AutoPlayTab {
     return new Promise((resolve) => { this.timer = setTimeout(resolve, seconds * 1000); });
   }
 
-  say(text) {
-    if (!app.speaker.available) { // no voice: give roughly the time it takes to read the sentence
+  say(text, lang) {
+    if (!app.speaker.hasVoice(lang)) { // no voice: give roughly the time it takes to read the sentence
       return this.wait(1 + 0.06 * text.length);
     }
     let timeout;
     return Promise.race([
-      app.speaker.speak(text),
+      app.speaker.speak(text, lang),
       new Promise((resolve) => { timeout = setTimeout(resolve, SPEECH_TIMEOUT); }),
     ]).finally(() => clearTimeout(timeout));
   }
 
-  // One phrase after another: speak, recall pause, answer, examples, next.
+  // One phrase after another, following L.autoplaySteps (the chosen content and languages).
   async playLoop(run) {
     const live = () => run === this.run;
     while (this.index < this.items.length) {
-      const phrase = this.items[this.index];
+      const phrase = this.items[this.index], content = this.content(), langs = this.langs();
       const text = info(phrase);
-      this.card.show(phrase, { showBack: false, showExamples: false, info: text });
-      this.updateLabels("🔊 Listen");
-      await this.say(phrase.german);
-      if (!live()) return;
-      this.updateLabels("💭 What does it mean?");
-      await this.wait(this.pause("recall"));
-      if (!live()) return;
-      this.card.show(phrase, { info: text });
-      this.updateLabels("Answer");
-      await this.wait(this.pause("answer"));
-      if (!live()) return;
-      for (const [i, [german]] of phrase.examples.entries()) {
-        this.card.highlightExample(i);
-        this.updateLabels(`🔊 Example ${i + 1} of ${phrase.examples.length}`);
-        await this.say(german);
-        if (!live()) return;
-        await this.wait(this.pause("example"));
-        if (!live()) return;
+      for (const [kind, ...args] of L.autoplaySteps(phrase, content, langs)) {
+        if (kind === "show") {
+          this.card.show(phrase, { langs: langs.slice(0, args[0]), showExamples: args[1],
+            exampleEn: langs.includes("en"), info: text });
+        } else if (kind === "status") {
+          this.updateLabels(args[0]);
+        } else if (kind === "highlight") {
+          this.card.highlightExample(args[0]);
+        } else {
+          await (kind === "wait" ? this.wait(this.pause(args[0])) : this.say(args[0], args[1]));
+          if (!live()) return;
+        }
       }
-      this.card.highlightExample(null);
-      this.updateLabels("Next phrase…");
-      await this.wait(this.pause("next"));
-      if (!live()) return;
       if (this.index + 1 >= this.items.length && $("auto-loop").checked) this.index = 0;
       else this.index += 1;
     }
@@ -870,8 +939,11 @@ class ListsTab {
     setOptions($("lists-level"), pairs(app.levels), "ALL");
     setOptions($("lists-topic"), topicOptions("ALL"), L.ALL_TOPICS);
     setOptions($("lists-sort"), Object.entries(L.SORTS), "id");
-    for (const id of ["lists-kind", "lists-topic", "lists-sort", "lists-limit", "lists-translation",
-      "lists-examples"]) $(id).onchange = () => this.refresh();
+    for (const id of ["lists-kind", "lists-topic", "lists-sort", "lists-limit"]) $(id).onchange = () => this.refresh();
+    const s = app.progress.settings;
+    langCheckboxes("lists-lang", L.cleanLangs(s.lists_langs), () => this.saveColumns());
+    $("lists-examples").checked = Boolean(s.lists_examples);
+    $("lists-examples").onchange = () => this.saveColumns();
     $("lists-level").onchange = () => {
       setOptions($("lists-topic"), topicOptions($("lists-level").value), $("lists-topic").value);
       this.refresh();
@@ -890,6 +962,17 @@ class ListsTab {
     return L.FILTERS[$("lists-kind").value];
   }
 
+  // Which languages and whether the examples are shown; remembered in the settings.
+  saveColumns() {
+    const s = app.progress.settings;
+    const next = { lists_langs: L.cleanLangs(checkedLangs("lists-lang")), lists_examples: $("lists-examples").checked };
+    if (Object.entries(next).some(([k, v]) => JSON.stringify(s[k]) !== JSON.stringify(v))) {
+      Object.assign(s, next);
+      app.progress.save();
+    }
+    this.refresh();
+  }
+
   refresh() {
     const today = L.todayISO();
     const { progress } = app;
@@ -898,16 +981,19 @@ class ListsTab {
       query: $("lists-search").value, sort: $("lists-sort").value, today });
     const limit = readInt($("lists-limit"), 50);
     this.shown = limit ? matching.slice(0, limit) : matching;
-    const translation = $("lists-translation").checked, examples = $("lists-examples").checked;
+    const langs = checkedLangs("lists-lang"), examples = $("lists-examples").checked;
+    const translations = langs.filter((lang) => lang !== "de");
     const rows = document.createDocumentFragment();
     this.shown.forEach((p, i) => {
       const s = progress.state(p.id);
       const tag = s.lapses >= L.DIFFICULT_LAPSES ? "difficult" : L.wasForgotten(s) ? "forgotten" : "";
+      const star = progress.starred.has(p.id) ? "★ " : "";
       rows.append(el("li", { class: tag, onclick: () => app.openInBrowse(p.id) },
-        el("div", { class: "head" }, el("span", { text: `${i + 1}. ${p.id}` }),
+        el("div", { class: "head" }, el("span", { text: `${i + 1}. ${star}${p.id}` }),
           el("span", { text: L.cardStatus(progress, p, today) })),
-        el("div", { class: "de", lang: "de", text: (progress.starred.has(p.id) ? "★ " : "") + p.german }),
-        translation ? el("div", { class: "tr", text: `${p.english} · ${p.chinese}` }) : null,
+        langs.includes("de") ? el("div", { class: "de", lang: "de", text: p.german }) : null,
+        translations.length
+          ? el("div", { class: "tr", text: translations.map((lang) => L.phraseText(p, lang)).join(" · ") }) : null,
         examples ? el("div", { class: "ex", lang: "de", text: p.examples.map(([de]) => de).join("  |  ") }) : null));
     });
     $("lists-rows").replaceChildren(rows);
@@ -925,25 +1011,23 @@ class ListsTab {
 
   saveExport(format) {
     if (!format) return;
-    const withTranslation = $("lists-translation").checked, withExamples = $("lists-examples").checked;
+    const langs = checkedLangs("lists-lang"), withExamples = $("lists-examples").checked;
+    const withEnglish = langs.includes("en"); // examples are German, with their English translation
     const today = L.todayISO();
     let text;
     if (format === "txt") {
       text = this.shown.map((p, i) => {
-        let line = `${i + 1}. ${p.german}`;
-        if (withTranslation) line += `  —  ${p.english}  /  ${p.chinese}`;
-        const lines = [line];
+        const lines = [`${i + 1}. ${langs.map((lang) => L.phraseText(p, lang)).join("  —  ")}`];
         if (withExamples) {
-          for (const [de, en] of p.examples) lines.push(`     • ${de}${withTranslation ? `  (${en})` : ""}`);
+          for (const [de, en] of p.examples) lines.push(`     • ${de}${withEnglish ? `  (${en})` : ""}`);
         }
         return lines.join("\n");
       }).join("\n") + "\n";
     } else {
-      const header = ["id", "level", "topic", "german", ...(withTranslation ? ["english", "chinese"] : []),
+      const header = ["id", "level", "topic", ...langs.map((lang) => L.LANG_FIELD[lang]),
         ...(withExamples ? ["examples"] : []), "status"];
-      const rows = this.shown.map((p) => [p.id, p.level, p.topic, p.german,
-        ...(withTranslation ? [p.english, p.chinese] : []),
-        ...(withExamples ? [p.examples.map(([de, en]) => (withTranslation ? `${de} (${en})` : de)).join(" | ")] : []),
+      const rows = this.shown.map((p) => [p.id, p.level, p.topic, ...langs.map((lang) => L.phraseText(p, lang)),
+        ...(withExamples ? [p.examples.map(([de, en]) => (withEnglish ? `${de} (${en})` : de)).join(" | ")] : []),
         L.cardStatus(app.progress, p, today)]);
       text = "﻿" + [header, ...rows].map(csvRow).join("\r\n") + "\r\n"; // BOM so Excel reads UTF-8
     }
@@ -1193,7 +1277,12 @@ const settings = {
     $("set-voice").onchange = () => app.speaker.setVoice($("set-voice").value);
     $("set-rate").oninput = () => this.showRate();
     $("set-rate").onchange = () => app.speaker.setRate($("set-rate").value);
-    $("set-voice-test").onclick = () => app.speaker.speak(VOICE_SAMPLE);
+    $("set-voice-test").onclick = () => {
+      if (app.tabs.autoplay.playing) app.tabs.autoplay.stop();
+      app.speaker.speak(VOICE_SAMPLE);
+    };
+    $("set-text-size").onchange = () => applyTextSize($("set-text-size").value);
+    $("set-text-reset").onclick = () => applyTextSize(100);
     app.speaker.onVoices = () => this.fillVoices();
     $("data-export").onclick = () => download(JSON.stringify(app.progress), "progress.json", "application/json");
     $("data-share").hidden = !navigator.canShare?.({ files: [new File(["{}"], "progress.json")] });
@@ -1217,6 +1306,7 @@ const settings = {
     $("set-mode").value = s.answer_mode;
     $("set-new").value = s.new_per_day;
     $("set-goal").value = s.daily_goal;
+    $("set-text-size").value = s.text_size;
     this.fillVoices();
     this.updateInfo();
   },
@@ -1271,15 +1361,16 @@ const settings = {
       return;
     }
     const learned = Object.values(data.cards).filter((c) => c.last_review).length;
-    if (!confirm(`Replace the progress on this phone with ${file.name}?\n\n`
-      + `${learned} phrases learned, ${data.log.length} ratings.`)) return;
-    app.progress.load(data);
+    if (!confirm(`Merge ${file.name} into the progress on this phone?\n\n`
+      + `${learned} phrases learned, ${data.log.length} ratings. For phrases studied in both, `
+      + "the more recent review is kept.")) return;
+    app.progress.merge(data);
     app.progress.save();
     app.tabs.study.startSession();
     app.tabs.autoplay.loadToday();
     app.tabs[app.current].onShow();
-    this.fill(); // show the imported settings
-    $("data-info").textContent += " Imported.";
+    this.fill();
+    $("data-info").textContent += " Merged.";
   },
 };
 
@@ -1357,7 +1448,28 @@ function loadProgress() {
   });
 }
 
+// Text size in percent of the normal size; the styles use rem, so everything scales.
+function applyTextSize(percent, save = true) {
+  const [low, high, step] = TEXT_SIZES;
+  const size = Math.min(high, Math.max(low, Math.round((Number(percent) || 100) / step) * step));
+  document.documentElement.style.fontSize = `${size}%`;
+  if ($("set-text-size")) $("set-text-size").value = size;
+  if (save && app.progress.settings.text_size !== size) {
+    app.progress.settings.text_size = size;
+    app.progress.save();
+    if (app.tabs[app.current]) app.tabs[app.current].onShow(); // redraw the chart
+  }
+}
+
 function onKey(e) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey) { // Ctrl/Cmd + bigger, − smaller, 0 normal text
+    const step = { "+": 1, "=": 1, "-": -1 }[e.key];
+    if (step || e.key === "0") {
+      e.preventDefault(); // not the browser zoom
+      applyTextSize(step ? app.progress.settings.text_size + step * TEXT_SIZES[2] : 100);
+      return;
+    }
+  }
   if (e.target.closest("input, select, textarea") || document.querySelector("dialog[open]")) return;
   if (e.ctrlKey || e.metaKey) { // Ctrl+Z / Cmd+Z undoes the last rating
     if (e.key.toLowerCase() === "z") app.tabs.study.undo();
@@ -1372,7 +1484,8 @@ function onKey(e) {
 
 async function main() {
   app.progress = loadProgress();
-  app.speaker = new Speaker();
+  app.speaker = new Speaker(app.progress);
+  applyTextSize(app.progress.settings.text_size, false);
   try {
     const response = await fetch("phrases.json");
     app.phrases = (await response.json()).map(L.phraseFromRow);

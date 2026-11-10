@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2a78d6">
-  <meta name="description" content="Learn 3,000 German phrases (B1-C1) with spaced repetition.">
+  <meta name="description" content="Learn 4,000 German phrases and 3,000 words (B1-C1) with spaced repetition.">
   <title>German Phrases</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
@@ -203,6 +203,12 @@
                                         inputmode="numeric"></label>
       <label>Daily goal (ratings) <input id="set-goal" type="number" min="1" max="500" step="5"
                                          inputmode="numeric"></label>
+      <div class="filters">
+        <label>Text size (%) <input id="set-text-size" type="number" min="70" max="200" step="10"
+                                    inputmode="numeric"></label>
+        <button type="button" id="set-text-reset">Reset to 100 %</button>
+      </div>
+      <p class="hint">On a keyboard: Ctrl + bigger, Ctrl − smaller, Ctrl 0 normal size (⌘ on a Mac).</p>
       <div id="set-speech">
         <label id="set-voice-row">German voice <select id="set-voice"></select></label>
         <label>Speech speed <span id="set-rate-value"></span>
@@ -213,8 +219,8 @@
       </div>
       <h2>Progress file</h2>
       <p class="hint">The same <code>progress.json</code> as the PC trainer. Export it here and copy it
-        to <code>data/progress.json</code> on the PC, or import the PC's file. Importing replaces the
-        progress on this phone.</p>
+        to <code>data/progress.json</code> on the PC, or import the PC's file. Importing merges the file
+        into the progress on this phone; for phrases studied in both, the more recent review is kept.</p>
       <div class="filters">
         <button type="button" id="data-export">Export</button>
         <button type="button" id="data-share" hidden>Share…</button>

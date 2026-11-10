@@ -134,6 +134,42 @@ export class Progress {
     this.onSave(this);
   }
 
+  // Merge another progress file into this one instead of replacing it. Each card keeps the copy
+  // with the newer last_review; on the same day, the copy rated more often that day (its later
+  // state). Rating logs are combined: an entry present in both copies is kept once, so history
+  // shared through an earlier export/import is not doubled. Starred phrases are combined and
+  // this device's settings are kept.
+  merge(data) {
+    const other = new Progress(data);
+    const key = (entry) => JSON.stringify(entry);
+    const unmatched = new Map();
+    for (const entry of this.log) unmatched.set(key(entry), (unmatched.get(key(entry)) || 0) + 1);
+    const extra = other.log.filter((entry) => {
+      const n = unmatched.get(key(entry)) || 0;
+      if (n) unmatched.set(key(entry), n - 1);
+      return !n;
+    });
+    const timesRated = (log, pid, day) => log.filter((e) => e[0] === day && e[1] === pid).length;
+    for (const [pid, theirs] of Object.entries(other.cards)) {
+      const ours = this.cards[pid];
+      const day = theirs.last_review;
+      if (!ours || day > ours.last_review
+        || (day === ours.last_review && timesRated(other.log, pid, day) > timesRated(this.log, pid, day))) {
+        this.cards[pid] = theirs;
+      }
+    }
+    // Stable sort: within a day, this device's ratings come first, then the imported ones.
+    this.log = [...this.log, ...extra].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+    for (const pid of other.starred) this.starred.add(pid);
+    this.settings = { ...other.settings, ...this.settings };
+    if (other.daily.date > this.daily.date) this.daily = { ...other.daily };
+    else if (other.daily.date === this.daily.date && this.daily.date) {
+      const today = this.log.filter((e) => e[0] === this.daily.date);
+      const fresh = today.filter((e) => e[4]).length;
+      this.daily = { date: this.daily.date, new: fresh, reviews: today.length - fresh };
+    }
+  }
+
   state(pid) {
     return this.cards[pid] || newCard();
   }
