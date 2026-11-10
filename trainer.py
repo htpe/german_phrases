@@ -6,6 +6,7 @@ Shares data/progress.json with app.py, so both apps see the same learning state
 (don't run both at the same time, or one will overwrite the other's progress).
 """
 import csv
+import json
 import calendar
 import math
 import random
@@ -590,6 +591,9 @@ class StudyTab(ttk.Frame):
             action()
 
     def on_show(self) -> None:
+        if not self.practicing and self.session.today != date.today():  # a new day started
+            self.start_session()
+            return
         self.update_status()
         phrase = self.visible_phrase()
         if phrase is not None:
@@ -1684,9 +1688,59 @@ class SettingsTab(ttk.Frame):
 
         box = self.section("Progress file")
         ttk.Label(self.line(box), text=str(self.app.progress.path)).pack(side="left")
+        row = self.line(box)
+        ttk.Button(row, text="Export…", command=self.export_progress,
+                   takefocus=False).pack(side="left", padx=(0, 6))
+        ttk.Button(row, text="Import…", command=self.import_progress,
+                   takefocus=False).pack(side="left", padx=(0, 12))
+        self.progress_info = ttk.Label(row)
+        self.progress_info.pack(side="left")
+        self.update_progress_info()
         self.line(box, "All settings and your progress are saved automatically in this file. "
-                       "Copy it to move your progress to another computer. "
+                       "Export saves a copy for the phone or the browser app (Settings → Import "
+                       "there); Import merges a progress.json from another device into this one: "
+                       "for phrases studied on both, the more recent review is kept, and the "
+                       "settings here stay as they are. "
                        "Don't run app.py and trainer.py at the same time.")
+
+    def update_progress_info(self, note: str = "") -> None:
+        progress = self.app.progress
+        learned = sum(1 for c in progress.cards.values() if not c.is_new)
+        self.progress_info.configure(
+            text=f"On this computer: {learned} phrases learned, {len(progress.log)} ratings.{note}")
+
+    def export_progress(self) -> None:
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Export progress", initialfile="progress.json",
+            defaultextension=".json", filetypes=[("Progress file", "*.json"), ("All files", "*.*")])
+        if path:
+            self.app.progress.save(Path(path))
+            self.update_progress_info(" Exported.")
+
+    def import_progress(self) -> None:
+        path = filedialog.askopenfilename(
+            parent=self, title="Import progress",
+            filetypes=[("Progress file", "*.json"), ("All files", "*.*")])
+        if not path:
+            return
+        path = Path(path)
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data.get("cards"), dict) or not isinstance(data.get("log"), list):
+                raise ValueError("not a progress file")
+            other = Progress(path)
+        except (OSError, ValueError, TypeError, AttributeError) as e:
+            messagebox.showerror("Import progress", f"Could not read {path.name}: {e}", parent=self)
+            return
+        learned = sum(1 for c in other.cards.values() if not c.is_new)
+        if not messagebox.askyesno(
+                "Import progress",
+                f"Merge {path.name} into the progress on this computer?\n\n"
+                f"{learned} phrases learned, {len(other.log)} ratings. "
+                "For phrases studied in both, the more recent review is kept.", parent=self):
+            return
+        self.app.merge_progress(other)
+        self.update_progress_info(" Merged.")
 
     def update_collections(self) -> None:
         counts: dict[str, int] = {}
@@ -1837,6 +1891,9 @@ class TrainerApp:
                 root.bind(f"<{mod}-{key}>", lambda e, step=step: self.change_text_size(step))
         root.bind(f"<{mod}-0>", lambda e: self.apply_text_size(100))
         root.bind(f"<{mod}-KP_0>", lambda e: self.apply_text_size(100))
+        # Coming back to the window on a new day (left open overnight): refresh the open tab.
+        self.shown_day = date.today()
+        root.bind("<Activate>", self.on_activate)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.report_callback_exception = self.report_error
 
@@ -1904,6 +1961,16 @@ class TrainerApp:
             self.autoplay.load_today()
         self.settings_tab.update_collections()
 
+    def merge_progress(self, other: Progress) -> None:
+        """Merge a progress file from another device and show the result in every tab."""
+        self.progress.merge(other)
+        self.progress.save()
+        self.study.start_session()
+        self.lists.refresh()
+        self.progress_tab.refresh()
+        if not self.autoplay.playing:
+            self.autoplay.load_today()
+
     def current_tab(self):
         return self.root.nametowidget(self.notebook.select())
 
@@ -1951,6 +2018,11 @@ class TrainerApp:
     def toggle_star(self, phrase_id: str) -> None:
         self.progress.starred ^= {phrase_id}
         self.progress.save()
+
+    def on_activate(self, event: tk.Event) -> None:
+        if event.widget is self.root and date.today() != self.shown_day:
+            self.shown_day = date.today()
+            self.current_tab().on_show()
 
     def on_tab_changed(self) -> None:
         tab = self.current_tab()

@@ -29,16 +29,19 @@ To try it on the PC first: `python -m http.server 8000 --directory mobile`, then
 - **Auto play** keeps the screen on while playing. Android may pause it when the screen is
   locked or you switch apps.
 - **Progress chart**: tap a bar to select that day and see its numbers.
-- **Settings** (level, topic, direction, answer mode, new phrases per day, daily goal) are under ⚙.
+- **Settings** (level, topic, direction, answer mode, new phrases per day, daily goal, text size,
+  voice and speed) are under ⚙. Voice, speed and text size are saved in `progress.json` like on the PC.
 
 ## Moving progress between the PC and the phone
 
 ⚙ Settings → **Export** saves `progress.json` to the phone's Downloads. **Share…** sends it to
-Drive, e-mail and so on. Copy it to `data/progress.json` on the PC (close the PC app first).
-To go the other way, choose **Import…** on the phone and pick the PC's `data/progress.json`.
+Drive, e-mail and so on. On the PC, choose Settings → Progress file → **Import…** and
+pick it. To go the other way, choose **Export…** on the PC, then **Import…** on the phone.
 
-Importing **replaces** the phone's progress. The two copies are not merged, so study on one device
-at a time and move the file when you switch.
+Importing **merges** the file into the phone's progress: for a phrase studied on both devices, the
+copy with the more recent review is kept; ratings from both are combined in the history (ratings
+already shared by an earlier export/import are not counted twice) and starred phrases are combined.
+Each device keeps its own settings. Import works the same way on the PC.
 
 ## Updates
 

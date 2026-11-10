@@ -77,7 +77,7 @@ Same study method and the same progress file as `app.py`, organised in six tabs:
   Also streaks, totals, a 30-day chart and statistics per level.
 - **Settings**: all settings in one place: study (level, topic, direction, answer mode, new
   phrases per day, daily goal), text size, speech (voice, speed), Auto play (pauses from 0 to
-  10 s, *Reset to 1 s*, repeat), phrase collections and where the progress file is. Everything is
+  10 s, *Reset to 1 s*, repeat), phrase collections and the progress file. Everything is
   saved automatically.
   - **Text size** from 70 % to 200 %; in every tab **Ctrl +** / **Ctrl −** change it and
     **Ctrl 0** resets it (**⌘** on macOS). Large sizes may need a bigger window.
@@ -90,6 +90,11 @@ Same study method and the same progress file as `app.py`, organised in six tabs:
     comma, semicolon or tab separated; examples like `Satz. (Sentence.) | Satz 2. (Sentence 2.)`).
   - Other file formats: add a converter function in `phrase_import.py` (see the module docstring);
     it then shows up under *Format* in the import dialog.
+  - **Progress file**: **Export…** saves a copy of your progress for the phone or browser app;
+    **Import…** merges a `progress.json` from another device (the phone or browser app, or another
+    computer) into this one. For a phrase studied on both, the copy with the more recent review is
+    kept; ratings from both are combined (ratings already shared by an earlier export/import are not
+    counted twice) and starred phrases are combined. The settings on this computer stay as they are.
 
 Don't run `app.py` and `trainer.py` at the same time: both write `data/progress.json`.
 

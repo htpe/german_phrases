@@ -96,3 +96,25 @@ test("a progress file round-trips unchanged", () => {
   const copy = new L.Progress(JSON.parse(JSON.stringify(fx.progress)));
   assert.deepEqual(JSON.parse(JSON.stringify(copy)), fx.progress);
 });
+
+test("importing merges progress, keeping the newer review of each card", () => {
+  const card = (last_review, reps) => ({ reps, interval: 1, ease: 2.5, lapses: 0, due: last_review, last_review });
+  const shared = ["2026-10-01", "A", 3, 5, 1];
+  const here = new L.Progress({
+    settings: { level: "B2" }, daily: { date: "2026-10-03", new: 1, reviews: 0 }, starred: ["A"],
+    log: [shared, ["2026-10-03", "B", 3, 4, 1], ["2026-10-03", "C", 3, 2, 0]],
+    cards: { A: card("2026-10-01", 1), B: card("2026-10-03", 1), C: card("2026-10-03", 2) },
+  });
+  here.merge({
+    settings: { level: "C1" }, daily: { date: "2026-10-03", new: 0, reviews: 2 }, starred: ["D"],
+    log: [shared, ["2026-10-02", "A", 4, 3, 0], ["2026-10-03", "C", 3, 2, 0], ["2026-10-03", "C", 4, 1, 0]],
+    cards: { A: card("2026-10-02", 2), B: card("2026-10-02", 5), C: card("2026-10-03", 3), D: card("2026-10-01", 1) },
+  });
+  assert.deepEqual(Object.fromEntries(Object.entries(here.cards).map(([pid, c]) => [pid, c.reps])),
+    { A: 2, B: 1, C: 3, D: 1 });
+  assert.deepEqual(here.log, [shared, ["2026-10-02", "A", 4, 3, 0], ["2026-10-03", "B", 3, 4, 1],
+    ["2026-10-03", "C", 3, 2, 0], ["2026-10-03", "C", 4, 1, 0]]);
+  assert.deepEqual([...here.starred].sort(), ["A", "D"]);
+  assert.equal(here.settings.level, "B2");
+  assert.deepEqual(here.daily, { date: "2026-10-03", new: 1, reviews: 2 });
+});
